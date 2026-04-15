@@ -311,6 +311,12 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None, 
         subscription_id = data["id"]
         update_license_status_by_subscription(subscription_id, "cancelled")
 
+elif event_type == "invoice.payment_succeeded":
+    subscription_id = data.get("subscription")
+    if subscription_id:
+        subscription = stripe.Subscription.retrieve(subscription_id)
+        current_period_end = datetime.fromtimestamp(subscription["current_period_end"], tz=timezone.utc)
+        update_license_status_by_subscription(subscription_id, "active", current_period_end)
     elif event_type == "invoice.payment_failed":
         subscription_id = data.get("subscription")
         if subscription_id:
