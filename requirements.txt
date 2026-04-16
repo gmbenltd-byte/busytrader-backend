@@ -1,3 +1,4 @@
 fastapi
 uvicorn
 stripe
+python-dotenv
