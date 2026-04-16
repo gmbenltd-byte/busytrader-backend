@@ -176,6 +176,11 @@ async def validate(request: Request):
 
     conn.close()
     return f"OK|{row['expires_at']}|VALID"
+@app.get("/health", response_class=PlainTextResponse)
+def health():
+    return "OK"
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
