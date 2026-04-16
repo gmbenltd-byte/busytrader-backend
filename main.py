@@ -29,13 +29,33 @@ def init_db():
     cur.execute("""
     CREATE TABLE IF NOT EXISTS licenses (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        email TEXT,
-        license_key TEXT,
-        product_id TEXT,
-        status TEXT,
-        expires_at TEXT
+        email TEXT NOT NULL,
+        license_key TEXT NOT NULL UNIQUE,
+        product_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        allowed_account TEXT,
+        platform TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        stripe_subscription_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
     )
     """)
+
+    cur.execute("PRAGMA table_info(licenses)")
+    existing_columns = [row[1] for row in cur.fetchall()]
+
+    columns_to_add = {
+        "allowed_account": "TEXT",
+        "platform": "TEXT NOT NULL DEFAULT 'BOTH'",
+        "stripe_subscription_id": "TEXT",
+        "created_at": "TEXT NOT NULL DEFAULT ''",
+        "updated_at": "TEXT NOT NULL DEFAULT ''",
+    }
+
+    for col_name, col_type in columns_to_add.items():
+        if col_name not in existing_columns:
+            cur.execute(f"ALTER TABLE licenses ADD COLUMN {col_name} {col_type}")
 
     conn.commit()
     conn.close()
@@ -44,9 +64,8 @@ def init_db():
 init_db()
 
 
-def generate_license():
+def generate_license() -> str:
     return "BT-" + secrets.token_hex(6).upper()
-
 
 @app.post("/stripe-webhook")
 async def stripe_webhook(request: Request, stripe_signature: str = Header(None)):
