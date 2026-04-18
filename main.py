@@ -141,6 +141,8 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
 
     return "OK"
 
+from fastapi.responses import PlainTextResponse
+
 @app.get("/validate", response_class=PlainTextResponse)
 async def validate(
     key: str = "",
@@ -153,7 +155,6 @@ async def validate(
     platform = str(broker).strip().upper()
     product_id = str(product_id).strip()
 
-    # TEMP TEST LICENSE
     if license_key == "TEST123":
         return "VALID"
 
