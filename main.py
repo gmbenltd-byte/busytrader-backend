@@ -141,17 +141,26 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
 
     return "OK"
 
-@app.post("/validate", response_class=PlainTextResponse)
-async def validate(request: Request):
-    data = await request.json()
+@app.get("/validate", response_class=PlainTextResponse)
+async def validate(
+    key: str = "",
+    account: str = "",
+    broker: str = "",
+    product_id: str = DEFAULT_PRODUCT_ID
+):
+    license_key = str(key).strip()
+    account_number = str(account).strip()
+    platform = str(broker).strip().upper()
+    product_id = str(product_id).strip()
 
-    license_key = str(data.get("license_key", "")).strip()
-    account_number = str(data.get("account_number", "")).strip()
-    platform = str(data.get("platform", "")).strip().upper()
-    product_id = str(data.get("product_id", DEFAULT_PRODUCT_ID)).strip()
+    # TEMP TEST LICENSE
+    if license_key == "TEST123":
+        return "VALID"
 
-    if not license_key or not account_number or not platform:
+    if not license_key or not account_number:
         return PlainTextResponse("ERROR|MISSING_FIELDS", status_code=400)
+
+    return PlainTextResponse("ERROR|INVALID_LICENSE", status_code=403)
 
     conn = db()
     cur = conn.cursor()
