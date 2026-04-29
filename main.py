@@ -98,7 +98,28 @@ def init_db():
 
 
 init_db()
+def sync_license_to_sheets(email, license_key, product_id, status, platform, expiry, subscription_id):
+    url = os.getenv("SHEETS_WEBHOOK_URL", "")
 
+    if not url:
+        print("Sheets sync skipped: SHEETS_WEBHOOK_URL not set")
+        return
+
+    payload = {
+        "email": email,
+        "license_key": license_key,
+        "product_id": product_id,
+        "status": status,
+        "platform": platform,
+        "expiry": expiry,
+        "subscription_id": subscription_id or ""
+    }
+
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        print("Sheets sync response:", response.status_code, response.text)
+    except Exception as e:
+        print("Sheets sync failed:", str(e))
 # =========================
 # HELPERS
 # =========================
