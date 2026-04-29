@@ -477,7 +477,7 @@ async def stripe_webhook(
 
     event_type = event.type
     data = event.data.object
-    data_dict = data.to_dict_recursive()
+    data_dict = dict(data)
 
     if event_type == "checkout.session.completed":
         customer_details = data_dict.get("customer_details") or {}
