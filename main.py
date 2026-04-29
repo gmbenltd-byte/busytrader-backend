@@ -472,29 +472,30 @@ async def stripe_webhook(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Webhook error: {str(e)}")
 
-    event_type = event["type"]
-    data = event["data"]["object"]
+    event_type = event.type
+    data = event.data.object
+    data_dict = data._to_dict_recursive()
 
     if event_type == "checkout.session.completed":
-        data_dict = dict(data)
+        customer_details = data_dict.get("customer_details") or {}
 
-customer_details = data_dict.get("customer_details") or {}
-if not isinstance(customer_details, dict):
-    customer_details = dict(customer_details)
+        customer_email = customer_details.get("email") or data_dict.get("customer_email")
+        stripe_customer_id = data_dict.get("customer")
+        subscription_id = data_dict.get("subscription")
 
-customer_email = customer_details.get("email") or data_dict.get("customer_email")
-stripe_customer_id = data_dict.get("customer")
-subscription_id = data_dict.get("subscription")
-stripe_customer_id = data_dict.get("customer")
-subscription_id = data.get("subscription")
-
-        if customer_email and subscription_id:
+        if customer_email:
             ensure_customer(customer_email, stripe_customer_id)
 
-            subscription = stripe.Subscription.retrieve(subscription_id)
-subscription_dict = dict(subscription)
-current_period_end = datetime.fromtimestamp(subscription_dict["current_period_end"], tz=timezone.utc)
-            )
+            if subscription_id:
+                subscription = stripe.Subscription.retrieve(subscription_id)
+                subscription_dict = subscription._to_dict_recursive()
+
+                current_period_end = datetime.fromtimestamp(
+                    subscription_dict["current_period_end"],
+                    tz=timezone.utc,
+                )
+            else:
+                current_period_end = utc_now() + timedelta(days=30)
 
             license_key = create_or_update_license(
                 email=customer_email,
@@ -507,33 +508,48 @@ current_period_end = datetime.fromtimestamp(subscription_dict["current_period_en
 
             print(f"Created/updated license for {customer_email}: {license_key}")
 
+            sync_license_to_sheets(
+                customer_email,
+                license_key,
+                DEFAULT_PRODUCT_ID,
+                "active",
+                "BOTH",
+                iso(current_period_end),
+                subscription_id
+            )
+
     elif event_type in ("customer.subscription.updated", "customer.subscription.created"):
-        subscription_id = data["id"]
-        status = data["status"]
-        current_period_end = datetime.fromtimestamp(
-            data["current_period_end"],
-            tz=timezone.utc,
-        )
+        subscription_id = data_dict.get("id")
+        status = data_dict.get("status")
+        period_end = data_dict.get("current_period_end")
 
-        mapped_status = "active" if status in ("active", "trialing", "past_due") else "cancelled"
+        if subscription_id and status and period_end:
+            current_period_end = datetime.fromtimestamp(
+                period_end,
+                tz=timezone.utc,
+            )
 
-        update_license_status_by_subscription(
-            subscription_id,
-            mapped_status,
-            current_period_end,
-        )
+            mapped_status = "active" if status in ("active", "trialing", "past_due") else "cancelled"
+
+            update_license_status_by_subscription(
+                subscription_id,
+                mapped_status,
+                current_period_end,
+            )
 
     elif event_type == "customer.subscription.deleted":
-        subscription_id = data["id"]
-        update_license_status_by_subscription(subscription_id, "cancelled")
+        subscription_id = data_dict.get("id")
+
+        if subscription_id:
+            update_license_status_by_subscription(subscription_id, "cancelled")
 
     elif event_type == "invoice.payment_failed":
-        subscription_id = data.get("subscription")
+        subscription_id = data_dict.get("subscription")
+
         if subscription_id:
             update_license_status_by_subscription(subscription_id, "cancelled")
 
     return "OK"
-
 # =========================
 # ADMIN - KILL SWITCH
 # =========================
