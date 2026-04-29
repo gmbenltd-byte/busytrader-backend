@@ -398,15 +398,19 @@ async def bind_account(request: Request):
 # =========================
 # EA VALIDATION ENDPOINT
 # =========================
+class ValidateRequest(BaseModel):
+    license_key: str
+    account_number: str
+    platform: str
+    product_id: Optional[str] = DEFAULT_PRODUCT_ID
 @app.post("/validate", response_class=PlainTextResponse)
-async def validate(request: Request):
+async def validate(req: ValidateRequest, request: Request):
     ip = request.client.host if request.client else ""
-    data = await request.json()
 
-    license_key = str(data.get("license_key", "")).strip()
-    account_number = str(data.get("account_number", "")).strip()
-    platform = str(data.get("platform", "")).strip().upper()
-    product_id = str(data.get("product_id", DEFAULT_PRODUCT_ID)).strip()
+    license_key = req.license_key.strip()
+    account_number = req.account_number.strip()
+    platform = req.platform.strip().upper()
+    product_id = req.product_id.strip()
 
     if not license_key or not account_number or not platform:
         log_validation(license_key, account_number, platform, product_id, ip, "ERROR_MISSING_FIELDS")
@@ -451,7 +455,6 @@ async def validate(request: Request):
 
     log_validation(license_key, account_number, platform, product_id, ip, "OK")
     return f"OK|{row['expires_at']}|VALID"
-
 
 # =========================
 # STRIPE WEBHOOK
