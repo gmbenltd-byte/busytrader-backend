@@ -476,9 +476,40 @@ async def stripe_webhook(
     data = event["data"]["object"]
 
     if event_type == "checkout.session.completed":
-        customer_email = data.get("customer_details", {}).get("email") or data.get("customer_email")
-        stripe_customer_id = data.get("customer")
-        subscription_id = data.get("subscription")
+    data_dict = dict(data)
+
+    customer_details = data_dict.get("customer_details") or {}
+    if not isinstance(customer_details, dict):
+        customer_details = dict(customer_details)
+
+    customer_email = customer_details.get("email") or data_dict.get("customer_email")
+    stripe_customer_id = data_dict.get("customer")
+    subscription_id = data_dict.get("subscription")
+
+    if customer_email:
+        ensure_customer(customer_email, stripe_customer_id)
+
+        if subscription_id:
+            subscription = stripe.Subscription.retrieve(subscription_id)
+            subscription_dict = dict(subscription)
+
+            current_period_end = datetime.fromtimestamp(
+                subscription_dict["current_period_end"],
+                tz=timezone.utc,
+            )
+        else:
+            current_period_end = utc_now() + timedelta(days=30)
+
+        license_key = create_or_update_license(
+            email=customer_email,
+            product_id=DEFAULT_PRODUCT_ID,
+            expires_at=current_period_end,
+            subscription_id=subscription_id,
+            status="active",
+            platform="BOTH",
+        )
+
+        print(f"Created/updated license for {customer_email}: {license_key}")
 
         if customer_email and subscription_id:
             ensure_customer(customer_email, stripe_customer_id)
