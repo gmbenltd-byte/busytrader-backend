@@ -476,15 +476,15 @@ async def stripe_webhook(
     data = event["data"]["object"]
 
     if event_type == "checkout.session.completed":
-    data_dict = dict(data)
+        data_dict = dict(data)
 
-    customer_details = data_dict.get("customer_details") or {}
-    if not isinstance(customer_details, dict):
-        customer_details = dict(customer_details)
+        customer_details = data_dict.get("customer_details") or {}
+        if not isinstance(customer_details, dict):
+            customer_details = dict(customer_details)
 
-    customer_email = customer_details.get("email") or data_dict.get("customer_email")
-    stripe_customer_id = data_dict.get("customer")
-    subscription_id = data_dict.get("subscription")
+        customer_email = customer_details.get("email") or data_dict.get("customer_email")
+        stripe_customer_id = data_dict.get("customer")
+        subscription_id = data_dict.get("subscription")
 
     if customer_email:
         ensure_customer(customer_email, stripe_customer_id)
