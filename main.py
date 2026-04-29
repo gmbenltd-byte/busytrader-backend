@@ -6,7 +6,7 @@ import stripe
 import secrets
 import requests
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Optional
 
 app = FastAPI()
@@ -98,28 +98,7 @@ def init_db():
 
 
 init_db()
-def sync_license_to_sheets(email, license_key, product_id, status, platform, expiry, subscription_id):
-    url = os.getenv("SHEETS_WEBHOOK_URL", "")
 
-    if not url:
-        print("Sheets sync skipped: SHEETS_WEBHOOK_URL not set")
-        return
-
-    payload = {
-        "email": email,
-        "license_key": license_key,
-        "product_id": product_id,
-        "status": status,
-        "platform": platform,
-        "expiry": expiry,
-        "subscription_id": subscription_id or ""
-    }
-
-    try:
-        response = requests.post(url, json=payload, timeout=10)
-        print("Sheets sync response:", response.status_code, response.text)
-    except Exception as e:
-        print("Sheets sync failed:", str(e))
 # =========================
 # HELPERS
 # =========================
@@ -493,30 +472,29 @@ async def stripe_webhook(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Webhook error: {str(e)}")
 
-    event_type = event.type
-    data = event.data.object
-    data_dict = data._to_dict_recursive()
+    event_type = event["type"]
+    data = event["data"]["object"]
 
     if event_type == "checkout.session.completed":
-        customer_details = data_dict.get("customer_details") or {}
+        data_dict = dict(data)
 
-        customer_email = customer_details.get("email") or data_dict.get("customer_email")
-        stripe_customer_id = data_dict.get("customer")
-        subscription_id = data_dict.get("subscription")
+customer_details = data_dict.get("customer_details") or {}
+if not isinstance(customer_details, dict):
+    customer_details = dict(customer_details)
 
-        if customer_email:
+customer_email = customer_details.get("email") or data_dict.get("customer_email")
+stripe_customer_id = data_dict.get("customer")
+subscription_id = data_dict.get("subscription")
+        stripe_customer_id = data.get("customer")
+        subscription_id = data.get("subscription")
+
+        if customer_email and subscription_id:
             ensure_customer(customer_email, stripe_customer_id)
 
-            if subscription_id:
-                subscription = stripe.Subscription.retrieve(subscription_id)
-                subscription_dict = subscription._to_dict_recursive()
-
-                current_period_end = datetime.fromtimestamp(
-                    subscription_dict["current_period_end"],
-                    tz=timezone.utc,
-                )
-            else:
-                current_period_end = utc_now() + timedelta(days=30)
+            subscription = stripe.Subscription.retrieve(subscription_id)
+subscription_dict = dict(subscription)
+current_period_end = datetime.fromtimestamp(subscription_dict["current_period_end"], tz=timezone.utc)
+            )
 
             license_key = create_or_update_license(
                 email=customer_email,
@@ -529,42 +507,67 @@ async def stripe_webhook(
 
             print(f"Created/updated license for {customer_email}: {license_key}")
 
-            sync_license_to_sheets(
-                customer_email,
-                license_key,
-                DEFAULT_PRODUCT_ID,
-                "active",
-                "BOTH",
-                iso(current_period_end),
-                subscription_id
-            )
-
     elif event_type in ("customer.subscription.updated", "customer.subscription.created"):
-        subscription_id = data_dict.get("id")
-        status = data_dict.get("status")
+        subscription_id = data["id"]
+        status = data["status"]
+        current_period_end = datetime.fromtimestamp(
+            data["current_period_end"],
+            tz=timezone.utc,
+        )
 
-        if subscription_id and status and data_dict.get("current_period_end"):
-            current_period_end = datetime.fromtimestamp(
-                data_dict["current_period_end"],
-                tz=timezone.utc,
-            )
+        mapped_status = "active" if status in ("active", "trialing", "past_due") else "cancelled"
 
-            mapped_status = "active" if status in ("active", "trialing", "past_due") else "cancelled"
-
-            update_license_status_by_subscription(
-                subscription_id,
-                mapped_status,
-                current_period_end,
-            )
+        update_license_status_by_subscription(
+            subscription_id,
+            mapped_status,
+            current_period_end,
+        )
 
     elif event_type == "customer.subscription.deleted":
-        subscription_id = data_dict.get("id")
-        if subscription_id:
-            update_license_status_by_subscription(subscription_id, "cancelled")
+        subscription_id = data["id"]
+        update_license_status_by_subscription(subscription_id, "cancelled")
 
     elif event_type == "invoice.payment_failed":
-        subscription_id = data_dict.get("subscription")
+        subscription_id = data.get("subscription")
         if subscription_id:
             update_license_status_by_subscription(subscription_id, "cancelled")
 
     return "OK"
+
+# =========================
+# ADMIN - KILL SWITCH
+# =========================
+
+@app.post("/admin/update-license", response_class=PlainTextResponse)
+async def admin_update_license(request: Request):
+    data = await request.json()
+
+    admin_key = str(data.get("admin_key", "")).strip()
+    license_key = str(data.get("license_key", "")).strip()
+    status = str(data.get("status", "")).strip().lower()
+
+    REAL_ADMIN_KEY = os.getenv("ADMIN_KEY", "replace_me")
+
+    if admin_key != REAL_ADMIN_KEY:
+        return PlainTextResponse("ERROR|UNAUTHORIZED", status_code=401)
+
+    if status not in ("active", "cancelled", "blocked", "expired"):
+        return PlainTextResponse("ERROR|INVALID_STATUS", status_code=400)
+
+    conn = db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE licenses
+        SET status = ?, updated_at = ?
+        WHERE license_key = ?
+    """, (status, iso(utc_now()), license_key))
+
+    changed = cur.rowcount
+    conn.commit()
+    conn.close()
+
+    if changed == 0:
+        return PlainTextResponse("ERROR|NOT_FOUND", status_code=404)
+
+    return f"OK|{license_key}|{status.upper()}"
