@@ -486,7 +486,7 @@ customer_email = customer_details.get("email") or data_dict.get("customer_email"
 stripe_customer_id = data_dict.get("customer")
 subscription_id = data_dict.get("subscription")
 stripe_customer_id = data_dict.get("customer")
-        subscription_id = data.get("subscription")
+subscription_id = data.get("subscription")
 
         if customer_email and subscription_id:
             ensure_customer(customer_email, stripe_customer_id)
