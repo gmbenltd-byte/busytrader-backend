@@ -477,9 +477,6 @@ async def validate(request: Request):
 # =========================
 # STRIPE WEBHOOK
 # =========================
-# =========================
-# STRIPE WEBHOOK
-# =========================
 @app.post("/stripe-webhook", response_class=PlainTextResponse)
 async def stripe_webhook(
     request: Request,
@@ -512,7 +509,7 @@ async def stripe_webhook(
 
             if subscription_id:
                 subscription = stripe.Subscription.retrieve(subscription_id)
-                subscription_dict = subscription.to_dict_recursive()
+                subscription_dict = subscription._to_dict_recursive()
 
                 current_period_end = datetime.fromtimestamp(
                     subscription_dict["current_period_end"],
@@ -532,21 +529,33 @@ async def stripe_webhook(
 
             print(f"Created/updated license for {customer_email}: {license_key}")
 
+            sync_license_to_sheets(
+                customer_email,
+                license_key,
+                DEFAULT_PRODUCT_ID,
+                "active",
+                "BOTH",
+                iso(current_period_end),
+                subscription_id
+            )
+
     elif event_type in ("customer.subscription.updated", "customer.subscription.created"):
         subscription_id = data_dict.get("id")
         status = data_dict.get("status")
-        current_period_end = datetime.fromtimestamp(
-            data_dict["current_period_end"],
-            tz=timezone.utc,
-        )
 
-        mapped_status = "active" if status in ("active", "trialing", "past_due") else "cancelled"
+        if subscription_id and status and data_dict.get("current_period_end"):
+            current_period_end = datetime.fromtimestamp(
+                data_dict["current_period_end"],
+                tz=timezone.utc,
+            )
 
-        update_license_status_by_subscription(
-            subscription_id,
-            mapped_status,
-            current_period_end,
-        )
+            mapped_status = "active" if status in ("active", "trialing", "past_due") else "cancelled"
+
+            update_license_status_by_subscription(
+                subscription_id,
+                mapped_status,
+                current_period_end,
+            )
 
     elif event_type == "customer.subscription.deleted":
         subscription_id = data_dict.get("id")
