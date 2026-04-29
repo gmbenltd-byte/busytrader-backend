@@ -456,6 +456,9 @@ async def validate(request: Request):
 # =========================
 # STRIPE WEBHOOK
 # =========================
+# =========================
+# STRIPE WEBHOOK
+# =========================
 @app.post("/stripe-webhook", response_class=PlainTextResponse)
 async def stripe_webhook(
     request: Request,
@@ -472,49 +475,30 @@ async def stripe_webhook(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Webhook error: {str(e)}")
 
-    event_type = event["type"]
+    event_type = event.type
     data = event.data.object
     data_dict = data.to_dict_recursive()
 
     if event_type == "checkout.session.completed":
-    customer_details = data_dict.get("customer_details") or {}
+        customer_details = data_dict.get("customer_details") or {}
 
-    customer_email = customer_details.get("email") or data_dict.get("customer_email")
-    stripe_customer_id = data_dict.get("customer")
-    subscription_id = data_dict.get("subscription")
+        customer_email = customer_details.get("email") or data_dict.get("customer_email")
+        stripe_customer_id = data_dict.get("customer")
+        subscription_id = data_dict.get("subscription")
 
-    if customer_email:
-        ensure_customer(customer_email, stripe_customer_id)
-
-        if subscription_id:
-            subscription = stripe.Subscription.retrieve(subscription_id)
-            subscription_dict = subscription.to_dict_recursive()
-
-            current_period_end = datetime.fromtimestamp(
-                subscription_dict["current_period_end"],
-                tz=timezone.utc,
-            )
-        else:
-            current_period_end = utc_now() + timedelta(days=30)
-
-        license_key = create_or_update_license(
-            email=customer_email,
-            product_id=DEFAULT_PRODUCT_ID,
-            expires_at=current_period_end,
-            subscription_id=subscription_id,
-            status="active",
-            platform="BOTH",
-        )
-
-        print(f"Created/updated license for {customer_email}: {license_key}")
-        if customer_email and subscription_id:
+        if customer_email:
             ensure_customer(customer_email, stripe_customer_id)
 
-            subscription = stripe.Subscription.retrieve(subscription_id)
-            current_period_end = datetime.fromtimestamp(
-                subscription["current_period_end"],
-                tz=timezone.utc,
-            )
+            if subscription_id:
+                subscription = stripe.Subscription.retrieve(subscription_id)
+                subscription_dict = subscription.to_dict_recursive()
+
+                current_period_end = datetime.fromtimestamp(
+                    subscription_dict["current_period_end"],
+                    tz=timezone.utc,
+                )
+            else:
+                current_period_end = utc_now() + timedelta(days=30)
 
             license_key = create_or_update_license(
                 email=customer_email,
@@ -528,10 +512,10 @@ async def stripe_webhook(
             print(f"Created/updated license for {customer_email}: {license_key}")
 
     elif event_type in ("customer.subscription.updated", "customer.subscription.created"):
-        subscription_id = data["id"]
-        status = data["status"]
+        subscription_id = data_dict.get("id")
+        status = data_dict.get("status")
         current_period_end = datetime.fromtimestamp(
-            data["current_period_end"],
+            data_dict["current_period_end"],
             tz=timezone.utc,
         )
 
@@ -544,11 +528,12 @@ async def stripe_webhook(
         )
 
     elif event_type == "customer.subscription.deleted":
-        subscription_id = data["id"]
-        update_license_status_by_subscription(subscription_id, "cancelled")
+        subscription_id = data_dict.get("id")
+        if subscription_id:
+            update_license_status_by_subscription(subscription_id, "cancelled")
 
     elif event_type == "invoice.payment_failed":
-        subscription_id = data.get("subscription")
+        subscription_id = data_dict.get("subscription")
         if subscription_id:
             update_license_status_by_subscription(subscription_id, "cancelled")
 
