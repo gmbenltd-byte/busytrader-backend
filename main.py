@@ -473,7 +473,8 @@ async def stripe_webhook(
         raise HTTPException(status_code=400, detail=f"Webhook error: {str(e)}")
 
     event_type = event["type"]
-    data = event["data"]["object"]
+    data = event.data.object
+    data_dict = data.to_dict_recursive()
 
     if event_type == "checkout.session.completed":
         data_dict = dict(data)
