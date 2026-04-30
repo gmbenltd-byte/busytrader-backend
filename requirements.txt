@@ -2,3 +2,4 @@ fastapi
 uvicorn
 stripe
 python-dotenv
+pip install fastapi uvicorn stripe requests pydantic
