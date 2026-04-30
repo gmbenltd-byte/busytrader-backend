@@ -20,10 +20,8 @@ STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "whsec_replace_me")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "replace_me")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "replace_me")
 
-ADMIN_KEY = os.getenv("ADMIN_KEY", "replace_me")
-
-DEFAULT_PRODUCT_ID = "BUSY_ALL"
-DB_PATH = "busytrader.db"
+DEFAULT_PRODUCT_ID = os.getenv("DEFAULT_PRODUCT_ID", "BUSY_ALL")
+DB_PATH = os.getenv("DB_PATH", "busytrader.db")
 
 stripe.api_key = STRIPE_SECRET_KEY
 
@@ -119,12 +117,21 @@ def parse_iso(value: str) -> datetime:
 
 
 def generate_license_key() -> str:
-    return "BT-" + "-".join([
+    parts = [
         secrets.token_hex(2).upper(),
         secrets.token_hex(2).upper(),
         secrets.token_hex(2).upper(),
         secrets.token_hex(2).upper(),
-    ])
+    ]
+    return "BT-" + "-".join(parts)
+
+
+def stripe_obj_to_dict(obj):
+    if hasattr(obj, "_to_dict_recursive"):
+        return obj._to_dict_recursive()
+    if hasattr(obj, "to_dict_recursive"):
+        return obj.to_dict_recursive()
+    return dict(obj)
 
 
 def ensure_customer(email: str, stripe_customer_id: Optional[str]) -> None:
@@ -151,45 +158,6 @@ def ensure_customer(email: str, stripe_customer_id: Optional[str]) -> None:
     conn.close()
 
 
-def send_license_email(email: str, license_key: str, product_id: str, expiry: str):
-    resend_api_key = os.getenv("RESEND_API_KEY", "")
-    email_from = os.getenv("EMAIL_FROM", "BusyTrader <onboarding@resend.dev>")
-
-    if not resend_api_key:
-        print("Email skipped: RESEND_API_KEY not set")
-        return
-
-    html = f"""
-    <h2>Your BusyTrader Licence</h2>
-    <p>Thank you for your purchase.</p>
-    <p><strong>Product:</strong> {product_id}</p>
-    <p><strong>Licence Key:</strong> {license_key}</p>
-    <p><strong>Expiry:</strong> {expiry}</p>
-    <p>Paste this licence key into your EA settings.</p>
-    """
-
-    try:
-        response = requests.post(
-            "https://api.resend.com/emails",
-            headers={
-                "Authorization": f"Bearer {resend_api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "from": email_from,
-                "to": [email],
-                "subject": "Your BusyTrader Licence Key",
-                "html": html,
-            },
-            timeout=10,
-        )
-
-        print("Email response:", response.status_code, response.text)
-
-    except Exception as e:
-        print("Email send failed:", str(e))
-
-
 def create_or_update_license(
     email: str,
     product_id: str,
@@ -212,38 +180,25 @@ def create_or_update_license(
 
     if existing:
         license_key = existing["license_key"]
-
         cur.execute("""
             UPDATE licenses
             SET status = ?, expires_at = ?, stripe_subscription_id = ?, platform = ?, updated_at = ?
             WHERE license_key = ?
         """, (status, expiry, subscription_id, platform, now, license_key))
-
     else:
         license_key = generate_license_key()
-
         cur.execute("""
             INSERT INTO licenses (
                 email, license_key, product_id, status, allowed_account, platform,
                 expires_at, stripe_subscription_id, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            email,
-            license_key,
-            product_id,
-            status,
-            None,
-            platform,
-            expiry,
-            subscription_id,
-            now,
-            now,
+            email, license_key, product_id, status, None, platform,
+            expiry, subscription_id, now, now
         ))
 
     conn.commit()
     conn.close()
-
     return license_key
 
 
@@ -256,18 +211,18 @@ def update_license_status_by_subscription(
     cur = conn.cursor()
     now = iso(utc_now())
 
-    if expires_at:
-        cur.execute("""
-            UPDATE licenses
-            SET status = ?, expires_at = ?, updated_at = ?
-            WHERE stripe_subscription_id = ?
-        """, (status, iso(expires_at), now, subscription_id))
-    else:
+    if expires_at is None:
         cur.execute("""
             UPDATE licenses
             SET status = ?, updated_at = ?
             WHERE stripe_subscription_id = ?
         """, (status, now, subscription_id))
+    else:
+        cur.execute("""
+            UPDATE licenses
+            SET status = ?, expires_at = ?, updated_at = ?
+            WHERE stripe_subscription_id = ?
+        """, (status, iso(expires_at), now, subscription_id))
 
     conn.commit()
     conn.close()
@@ -276,10 +231,8 @@ def update_license_status_by_subscription(
 def get_license(license_key: str):
     conn = db()
     cur = conn.cursor()
-
     cur.execute("SELECT * FROM licenses WHERE license_key = ?", (license_key,))
     row = cur.fetchone()
-
     conn.close()
     return row
 
@@ -294,22 +247,12 @@ def log_validation(
 ):
     conn = db()
     cur = conn.cursor()
-
     cur.execute("""
         INSERT INTO validation_log (
             license_key, account_number, platform, product_id, ip_address, result, created_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (
-        license_key,
-        account_number,
-        platform,
-        product_id,
-        ip,
-        result,
-        iso(utc_now()),
-    ))
-
+    """, (license_key, account_number, platform, product_id, ip, result, iso(utc_now())))
     conn.commit()
     conn.close()
 
@@ -317,7 +260,6 @@ def log_validation(
 def log_signal(signal, sent_to_telegram: bool):
     conn = db()
     cur = conn.cursor()
-
     cur.execute("""
         INSERT INTO signal_log (
             symbol, direction, entry, sl, tp1, tp2, tp3,
@@ -337,21 +279,84 @@ def log_signal(signal, sent_to_telegram: bool):
         1 if sent_to_telegram else 0,
         iso(utc_now()),
     ))
-
     conn.commit()
     conn.close()
+
+
+def sync_license_to_sheets(
+    email: str,
+    license_key: str,
+    product_id: str,
+    status: str,
+    platform: str,
+    expiry: str,
+    subscription_id: Optional[str],
+):
+    url = os.getenv("SHEETS_WEBHOOK_URL", "")
+
+    if not url:
+        print("Sheets sync skipped: SHEETS_WEBHOOK_URL not set")
+        return
+
+    payload = {
+        "email": email,
+        "license_key": license_key,
+        "product_id": product_id,
+        "status": status,
+        "platform": platform,
+        "expiry": expiry,
+        "subscription_id": subscription_id or "",
+    }
+
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        print("Sheets sync response:", response.status_code, response.text)
+    except Exception as e:
+        print("Sheets sync failed:", str(e))
+
+
+def send_license_email(email: str, license_key: str, product_id: str, expiry: str):
+    resend_api_key = os.getenv("RESEND_API_KEY", "")
+    email_from = os.getenv("EMAIL_FROM", "BusyTrader <onboarding@resend.dev>")
+
+    if not resend_api_key:
+        print("Email skipped: RESEND_API_KEY not set")
+        return
+
+    html = f"""
+    <h2>Your BusyTrader Licence</h2>
+    <p>Thank you for your purchase.</p>
+    <p><strong>Product:</strong> {product_id}</p>
+    <p><strong>Licence Key:</strong> {license_key}</p>
+    <p><strong>Expiry:</strong> {expiry}</p>
+    <p>Paste this licence key into your EA settings.</p>
+    <hr>
+    <p>BusyTrader</p>
+    """
+
+    try:
+        response = requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {resend_api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "from": email_from,
+                "to": [email],
+                "subject": "Your BusyTrader Licence Key",
+                "html": html,
+            },
+            timeout=10,
+        )
+        print("Email send response:", response.status_code, response.text)
+    except Exception as e:
+        print("Email send failed:", str(e))
 
 
 # =========================
 # MODELS
 # =========================
-class ValidateRequest(BaseModel):
-    license_key: str
-    account_number: str
-    platform: str
-    product_id: Optional[str] = DEFAULT_PRODUCT_ID
-
-
 class Signal(BaseModel):
     symbol: str
     direction: str
@@ -362,6 +367,13 @@ class Signal(BaseModel):
     tp3: str
     confidence: str
     reason: str
+
+
+class ValidateRequest(BaseModel):
+    license_key: str
+    account_number: str
+    platform: str
+    product_id: Optional[str] = DEFAULT_PRODUCT_ID
 
 
 # =========================
@@ -422,15 +434,13 @@ Reason:
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+    }
+
     try:
-        response = requests.post(
-            url,
-            json={
-                "chat_id": TELEGRAM_CHAT_ID,
-                "text": message,
-            },
-            timeout=10,
-        )
+        response = requests.post(url, json=payload, timeout=10)
     except requests.RequestException as e:
         log_signal(signal, False)
         raise HTTPException(status_code=500, detail=f"Telegram request failed: {str(e)}")
@@ -449,44 +459,35 @@ Reason:
 
 
 # =========================
-# BIND ACCOUNT
+# MANUAL REGISTER / REBIND
 # =========================
 @app.post("/bind-account", response_class=PlainTextResponse)
 async def bind_account(request: Request):
     data = await request.json()
-
     license_key = str(data.get("license_key", "")).strip()
     account_number = str(data.get("account_number", "")).strip()
 
     if not license_key or not account_number:
-        return PlainTextResponse("ERROR|MISSING_FIELDS", status_code=400)
-
-    row = get_license(license_key)
-
-    if not row:
-        return PlainTextResponse("ERROR|NOT_FOUND", status_code=404)
+        raise HTTPException(status_code=400, detail="license_key and account_number required")
 
     conn = db()
     cur = conn.cursor()
-
-    cur.execute("""
-        UPDATE licenses
-        SET allowed_account = ?, updated_at = ?
-        WHERE license_key = ?
-    """, (
-        account_number,
-        iso(utc_now()),
-        license_key,
-    ))
-
+    cur.execute(
+        "UPDATE licenses SET allowed_account = ?, updated_at = ? WHERE license_key = ?",
+        (account_number, iso(utc_now()), license_key),
+    )
+    changed = cur.rowcount
     conn.commit()
     conn.close()
+
+    if changed == 0:
+        return PlainTextResponse("ERROR|NOT_FOUND", status_code=404)
 
     return "OK|BOUND"
 
 
 # =========================
-# EA VALIDATION
+# EA VALIDATION ENDPOINT
 # =========================
 @app.post("/validate", response_class=PlainTextResponse)
 async def validate(req: ValidateRequest, request: Request):
@@ -495,115 +496,50 @@ async def validate(req: ValidateRequest, request: Request):
     license_key = req.license_key.strip()
     account_number = req.account_number.strip()
     platform = req.platform.strip().upper()
-    product_id = req.product_id.strip() if req.product_id else DEFAULT_PRODUCT_ID
+    product_id = (req.product_id or DEFAULT_PRODUCT_ID).strip()
 
     if not license_key or not account_number or not platform:
-        log_validation(
-            license_key,
-            account_number,
-            platform,
-            product_id,
-            ip,
-            "ERROR_MISSING_FIELDS",
-        )
+        log_validation(license_key, account_number, platform, product_id, ip, "ERROR_MISSING_FIELDS")
         return PlainTextResponse("ERROR|MISSING_FIELDS", status_code=400)
 
     row = get_license(license_key)
 
     if not row:
-        log_validation(
-            license_key,
-            account_number,
-            platform,
-            product_id,
-            ip,
-            "ERROR_NOT_FOUND",
-        )
+        log_validation(license_key, account_number, platform, product_id, ip, "ERROR_NOT_FOUND")
         return "ERROR|NOT_FOUND"
 
     if row["product_id"] != product_id:
-        log_validation(
-            license_key,
-            account_number,
-            platform,
-            product_id,
-            ip,
-            "ERROR_WRONG_PRODUCT",
-        )
+        log_validation(license_key, account_number, platform, product_id, ip, "ERROR_WRONG_PRODUCT")
         return "ERROR|WRONG_PRODUCT"
 
     if row["platform"] not in ("BOTH", platform):
-        log_validation(
-            license_key,
-            account_number,
-            platform,
-            product_id,
-            ip,
-            "ERROR_WRONG_PLATFORM",
-        )
+        log_validation(license_key, account_number, platform, product_id, ip, "ERROR_WRONG_PLATFORM")
         return "ERROR|WRONG_PLATFORM"
 
     if row["status"] != "active":
-        log_validation(
-            license_key,
-            account_number,
-            platform,
-            product_id,
-            ip,
-            f"ERROR_{row['status'].upper()}",
-        )
+        log_validation(license_key, account_number, platform, product_id, ip, f"ERROR_{row['status'].upper()}")
         return f"ERROR|{row['status'].upper()}"
 
     expiry = parse_iso(row["expires_at"])
 
     if utc_now() > expiry:
-        log_validation(
-            license_key,
-            account_number,
-            platform,
-            product_id,
-            ip,
-            "ERROR_EXPIRED",
-        )
+        log_validation(license_key, account_number, platform, product_id, ip, "ERROR_EXPIRED")
         return "ERROR|EXPIRED"
 
     if not row["allowed_account"]:
         conn = db()
         cur = conn.cursor()
-
         cur.execute("""
-            UPDATE licenses
-            SET allowed_account = ?, updated_at = ?
-            WHERE license_key = ?
-        """, (
-            account_number,
-            iso(utc_now()),
-            license_key,
-        ))
-
+            UPDATE licenses SET allowed_account = ?, updated_at = ? WHERE license_key = ?
+        """, (account_number, iso(utc_now()), license_key))
         conn.commit()
         conn.close()
+    else:
+        if row["allowed_account"] != account_number:
+            log_validation(license_key, account_number, platform, product_id, ip, "ERROR_WRONG_ACCOUNT")
+            return "ERROR|WRONG_ACCOUNT"
 
-    elif row["allowed_account"] != account_number:
-        log_validation(
-            license_key,
-            account_number,
-            platform,
-            product_id,
-            ip,
-            "ERROR_WRONG_ACCOUNT",
-        )
-        return "ERROR|WRONG_ACCOUNT"
-
-    log_validation(
-        license_key,
-        account_number,
-        platform,
-        product_id,
-        ip,
-        "OK",
-    )
-
+    log_validation(license_key, account_number, platform, product_id, ip, "OK")
     return f"OK|{row['expires_at']}|VALID"
 
 
@@ -626,17 +562,14 @@ async def stripe_webhook(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Webhook error: {str(e)}")
 
-    event_type = event["type"]
-    data_dict = event["data"]["object"]
+    event_type = event.type
+    data = event.data.object
+    data_dict = stripe_obj_to_dict(data)
 
     if event_type == "checkout.session.completed":
         customer_details = data_dict.get("customer_details") or {}
 
-        customer_email = (
-            customer_details.get("email")
-            or data_dict.get("customer_email")
-        )
-
+        customer_email = customer_details.get("email") or data_dict.get("customer_email")
         stripe_customer_id = data_dict.get("customer")
         subscription_id = data_dict.get("subscription")
 
@@ -645,9 +578,10 @@ async def stripe_webhook(
 
             if subscription_id:
                 subscription = stripe.Subscription.retrieve(subscription_id)
+                subscription_dict = stripe_obj_to_dict(subscription)
 
                 current_period_end = datetime.fromtimestamp(
-                    subscription["current_period_end"],
+                    subscription_dict["current_period_end"],
                     tz=timezone.utc,
                 )
             else:
@@ -664,6 +598,16 @@ async def stripe_webhook(
 
             print(f"Created/updated license for {customer_email}: {license_key}")
 
+            sync_license_to_sheets(
+                customer_email,
+                license_key,
+                DEFAULT_PRODUCT_ID,
+                "active",
+                "BOTH",
+                iso(current_period_end),
+                subscription_id,
+            )
+
             send_license_email(
                 customer_email,
                 license_key,
@@ -671,25 +615,14 @@ async def stripe_webhook(
                 iso(current_period_end),
             )
 
-    elif event_type in (
-        "customer.subscription.created",
-        "customer.subscription.updated",
-    ):
+    elif event_type in ("customer.subscription.updated", "customer.subscription.created"):
         subscription_id = data_dict.get("id")
-        stripe_status = data_dict.get("status")
+        status = data_dict.get("status")
         period_end = data_dict.get("current_period_end")
 
-        if subscription_id and stripe_status and period_end:
-            current_period_end = datetime.fromtimestamp(
-                period_end,
-                tz=timezone.utc,
-            )
-
-            mapped_status = (
-                "active"
-                if stripe_status in ("active", "trialing", "past_due")
-                else "cancelled"
-            )
+        if subscription_id and status and period_end:
+            current_period_end = datetime.fromtimestamp(period_end, tz=timezone.utc)
+            mapped_status = "active" if status in ("active", "trialing", "past_due") else "cancelled"
 
             update_license_status_by_subscription(
                 subscription_id,
@@ -701,46 +634,19 @@ async def stripe_webhook(
         subscription_id = data_dict.get("id")
 
         if subscription_id:
-            update_license_status_by_subscription(
-                subscription_id,
-                "cancelled",
-            )
+            update_license_status_by_subscription(subscription_id, "cancelled")
 
     elif event_type == "invoice.payment_failed":
         subscription_id = data_dict.get("subscription")
 
         if subscription_id:
-            update_license_status_by_subscription(
-                subscription_id,
-                "cancelled",
-            )
-
-    elif event_type == "invoice.payment_succeeded":
-        subscription_id = data_dict.get("subscription")
-
-        if subscription_id:
-            try:
-                subscription = stripe.Subscription.retrieve(subscription_id)
-
-                current_period_end = datetime.fromtimestamp(
-                    subscription["current_period_end"],
-                    tz=timezone.utc,
-                )
-
-                update_license_status_by_subscription(
-                    subscription_id,
-                    "active",
-                    current_period_end,
-                )
-
-            except Exception as e:
-                print("Failed to update invoice.payment_succeeded:", str(e))
+            update_license_status_by_subscription(subscription_id, "cancelled")
 
     return "OK"
 
 
 # =========================
-# ADMIN - UPDATE LICENCE STATUS
+# ADMIN - KILL SWITCH
 # =========================
 @app.post("/admin/update-license", response_class=PlainTextResponse)
 async def admin_update_license(request: Request):
@@ -750,11 +656,10 @@ async def admin_update_license(request: Request):
     license_key = str(data.get("license_key", "")).strip()
     status = str(data.get("status", "")).strip().lower()
 
-    if admin_key != ADMIN_KEY:
-        return PlainTextResponse("ERROR|UNAUTHORIZED", status_code=401)
+    real_admin_key = os.getenv("ADMIN_KEY", "replace_me")
 
-    if not license_key or not status:
-        return PlainTextResponse("ERROR|MISSING_FIELDS", status_code=400)
+    if admin_key != real_admin_key:
+        return PlainTextResponse("ERROR|UNAUTHORIZED", status_code=401)
 
     if status not in ("active", "cancelled", "blocked", "expired"):
         return PlainTextResponse("ERROR|INVALID_STATUS", status_code=400)
@@ -766,14 +671,9 @@ async def admin_update_license(request: Request):
         UPDATE licenses
         SET status = ?, updated_at = ?
         WHERE license_key = ?
-    """, (
-        status,
-        iso(utc_now()),
-        license_key,
-    ))
+    """, (status, iso(utc_now()), license_key))
 
     changed = cur.rowcount
-
     conn.commit()
     conn.close()
 
