@@ -546,101 +546,18 @@ async def validate(req: ValidateRequest, request: Request):
 # =========================
 # STRIPE WEBHOOK
 # =========================
-@app.post("/stripe-webhook", response_class=PlainTextResponse)
-async def stripe_webhook(
-    request: Request,
-    stripe_signature: str = Header(None, alias="Stripe-Signature"),
-):
-    payload = await request.body()
-
+@app.post("/stripe-webhook")
+async def stripe_webhook(request: Request):
     try:
-        event = stripe.Webhook.construct_event(
-            payload=payload,
-            sig_header=stripe_signature,
-            secret=STRIPE_WEBHOOK_SECRET,
-        )
+        body = await request.body()
+        print("WEBHOOK HIT")
+        
+        data = await request.json()
+        print("EVENT TYPE:", data.get("type"))
+
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Webhook error: {str(e)}")
-
-    event_type = event.type
-    data = event.data.object
-    data_dict = stripe_obj_to_dict(data)
-
-    if event_type == "checkout.session.completed":
-        customer_details = data_dict.get("customer_details") or {}
-
-        customer_email = customer_details.get("email") or data_dict.get("customer_email")
-        stripe_customer_id = data_dict.get("customer")
-        subscription_id = data_dict.get("subscription")
-
-        if customer_email:
-            ensure_customer(customer_email, stripe_customer_id)
-
-            if subscription_id:
-                subscription = stripe.Subscription.retrieve(subscription_id)
-                subscription_dict = stripe_obj_to_dict(subscription)
-
-                current_period_end = datetime.fromtimestamp(
-                    subscription_dict["current_period_end"],
-                    tz=timezone.utc,
-                )
-            else:
-                current_period_end = utc_now() + timedelta(days=30)
-
-            license_key = create_or_update_license(
-                email=customer_email,
-                product_id=DEFAULT_PRODUCT_ID,
-                expires_at=current_period_end,
-                subscription_id=subscription_id,
-                status="active",
-                platform="BOTH",
-            )
-
-            print(f"Created/updated license for {customer_email}: {license_key}")
-
-            sync_license_to_sheets(
-                customer_email,
-                license_key,
-                DEFAULT_PRODUCT_ID,
-                "active",
-                "BOTH",
-                iso(current_period_end),
-                subscription_id,
-            )
-
-            send_license_email(
-                customer_email,
-                license_key,
-                DEFAULT_PRODUCT_ID,
-                iso(current_period_end),
-            )
-
-    elif event_type in ("customer.subscription.updated", "customer.subscription.created"):
-        subscription_id = data_dict.get("id")
-        status = data_dict.get("status")
-        period_end = data_dict.get("current_period_end")
-
-        if subscription_id and status and period_end:
-            current_period_end = datetime.fromtimestamp(period_end, tz=timezone.utc)
-            mapped_status = "active" if status in ("active", "trialing", "past_due") else "cancelled"
-
-            update_license_status_by_subscription(
-                subscription_id,
-                mapped_status,
-                current_period_end,
-            )
-
-    elif event_type == "customer.subscription.deleted":
-        subscription_id = data_dict.get("id")
-
-        if subscription_id:
-            update_license_status_by_subscription(subscription_id, "cancelled")
-
-    elif event_type == "invoice.payment_failed":
-        subscription_id = data_dict.get("subscription")
-
-        if subscription_id:
-            update_license_status_by_subscription(subscription_id, "cancelled")
+        print("ERROR:", str(e))
+        return "ERROR"
 
     return "OK"
 
