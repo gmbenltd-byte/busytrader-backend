@@ -350,7 +350,7 @@ def send_license_email(email: str, license_key: str, product_id: str, expiry: st
         "BUSY_AI_COPILOT": "PASTE_COPILOT_LINK_HERE",
 
         # VIP
-        "BUSY_VIP": vip_link,
+        "BUSY_VIP":"https://t.me/+FNI5G2IXQrBmODk0",
     }
 
     download_link = DOWNLOAD_LINKS.get(product_id, "https://busytraderapp.com")
