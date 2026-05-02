@@ -108,13 +108,12 @@ def parse_iso(value: str) -> datetime:
 
 
 def generate_license_key() -> str:
-    parts = [
+    return "BT-" + "-".join([
         secrets.token_hex(2).upper(),
         secrets.token_hex(2).upper(),
         secrets.token_hex(2).upper(),
         secrets.token_hex(2).upper(),
-    ]
-    return "BT-" + "-".join(parts)
+    ])
 
 
 def stripe_obj_to_dict(obj):
@@ -128,10 +127,6 @@ def stripe_obj_to_dict(obj):
 def send_telegram_alert(message: str):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("Telegram skipped: not configured")
-        return
-
-    if TELEGRAM_BOT_TOKEN == "replace_me" or TELEGRAM_CHAT_ID == "replace_me":
-        print("Telegram skipped: placeholder values")
         return
 
     try:
@@ -338,10 +333,27 @@ def send_license_email(email: str, license_key: str, product_id: str, expiry: st
         print("Email skipped: RESEND_API_KEY not set")
         return
 
-    ea_download_link = "https://drive.google.com/drive/folders/1r7fY00J7Q2wUKE4TFKdG8n1QWmKncjhw"
     vip_link = "https://t.me/+FNI5G2IXQrBmODk0"
     scanner_link = "https://buy.stripe.com/6oU6oz9jAbQzal1cwwds407"
     setup_video_link = "https://youtu.be/8lp_DvkzM7E"
+
+    DOWNLOAD_LINKS = {
+        # PDFs
+        "BUSY_NAS100_PDF": "https://drive.google.com/uc?export=download&id=1FEoSPmVdiA6v-TfBqhEZVdNbobecMExZ",
+        "BUSY_RISK_PDF": "PASTE_RISK_PDF_LINK_HERE",
+        "BUSY_SCALPING_PDF": "PASTE_SCALPING_PDF_LINK_HERE",
+
+        # EAs / Apps
+        "BUSY_NAS100_EA": "PASTE_NAS100_EA_ZIP_LINK_HERE",
+        "BUSY_AI_AUTOTRADER": "PASTE_AUTOTRADER_ZIP_LINK_HERE",
+        "BUSY_AI_SCANNER": "PASTE_SCANNER_LINK_HERE",
+        "BUSY_AI_COPILOT": "PASTE_COPILOT_LINK_HERE",
+
+        # VIP
+        "BUSY_VIP": vip_link,
+    }
+
+    download_link = DOWNLOAD_LINKS.get(product_id, "https://busytraderapp.com")
 
     html = f"""
     <div style="background:#0b0b0b;padding:30px;color:white;font-family:Arial;">
@@ -360,9 +372,9 @@ def send_license_email(email: str, license_key: str, product_id: str, expiry: st
 
       <br>
 
-      <a href="{ea_download_link}"
+      <a href="{download_link}"
          style="background:gold;color:#111;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:6px 0;">
-         Download EA
+         Download Your Product
       </a>
 
       <br>
@@ -416,7 +428,6 @@ def send_license_email(email: str, license_key: str, product_id: str, expiry: st
             timeout=10,
         )
         print("Email send response:", response.status_code, response.text)
-
     except Exception as e:
         print("Email send failed:", str(e))
 
@@ -462,13 +473,6 @@ def home():
 
 @app.post("/send-signal")
 def send_signal(signal: Signal):
-    if TELEGRAM_BOT_TOKEN == "replace_me" or TELEGRAM_CHAT_ID == "replace_me":
-        log_signal(signal, False)
-        raise HTTPException(
-            status_code=500,
-            detail="Telegram bot token or chat ID not configured",
-        )
-
     message = f"""
 🚨 BUSYTRADER AI SIGNAL 🚨
 
