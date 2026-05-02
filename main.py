@@ -323,16 +323,41 @@ def send_license_email(email: str, license_key: str, product_id: str, expiry: st
         print("Email skipped: RESEND_API_KEY not set")
         return
 
-    html = f"""
-    <h2>Your BusyTrader Licence</h2>
-    <p>Thank you for your purchase.</p>
-    <p><strong>Product:</strong> {product_id}</p>
-    <p><strong>Licence Key:</strong> {license_key}</p>
-    <p><strong>Expiry:</strong> {expiry}</p>
-    <p>Paste this licence key into your EA settings.</p>
-    <hr>
-    <p>BusyTrader</p>
-    """
+html = f"""
+<div style="background:#0b0b0b;padding:30px;color:white;font-family:Arial;">
+  <h2 style="color:gold;">BusyTrader Licence Activated</h2>
+
+  <p>Your access is now active.</p>
+
+  <p><strong>Product:</strong> {product_id}</p>
+
+  <p><strong>Licence Key:</strong></p>
+  <div style="background:#111;padding:15px;border:1px solid gold;border-radius:8px;font-size:18px;">
+    {license_key}
+  </div>
+
+  <p><strong>Expiry:</strong> {expiry}</p>
+
+  <br>
+
+  <a href="https://drive.google.com/drive/folders/1r7fY00J7Q2wUKE4TFKdG8n1QWmKncjhw?usp=drive_link"
+     style="background:gold;color:#111;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:bold;">
+     Download BusyTrader EA
+  </a>
+
+  <br><br>
+
+  <a href="https://t.me/busytraderhq" style="color:#229ED9;">
+     Join Telegram for updates
+  </a>
+
+  <hr style="border-color:#222;">
+
+  <p style="font-size:12px;color:#888;">
+    Trading involves risk. This is not financial advice.
+  </p>
+</div>
+"""
 
     try:
         response = requests.post(
