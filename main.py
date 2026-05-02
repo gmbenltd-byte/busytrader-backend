@@ -546,18 +546,122 @@ async def validate(req: ValidateRequest, request: Request):
 # =========================
 # STRIPE WEBHOOK
 # =========================
-@app.post("/stripe-webhook")
-async def stripe_webhook(request: Request):
-    try:
-        body = await request.body()
-        print("WEBHOOK HIT")
-        
-        data = await request.json()
-        print("EVENT TYPE:", data.get("type"))
+@app.post("/stripe-webhook", response_class=PlainTextResponse)
+async def stripe_webhook(
+    request: Request,
+    stripe_signature: Optional[str] = Header(None, alias="Stripe-Signature"),
+):
+    payload = await request.body()
 
+    print("WEBHOOK HIT")
+
+    try:
+        event = stripe.Webhook.construct_event(
+            payload=payload,
+            sig_header=stripe_signature,
+            secret=STRIPE_WEBHOOK_SECRET,
+        )
     except Exception as e:
-        print("ERROR:", str(e))
-        return "ERROR"
+        print("STRIPE WEBHOOK ERROR:", str(e))
+        return PlainTextResponse("ERROR|INVALID_WEBHOOK", status_code=400)
+
+    event_type = event.type
+    data = event.data.object
+    data_dict = stripe_obj_to_dict(data)
+
+    print("EVENT TYPE:", event_type)
+
+    if event_type == "checkout.session.completed":
+        customer_details = data_dict.get("customer_details") or {}
+
+        customer_email = customer_details.get("email") or data_dict.get("customer_email")
+        stripe_customer_id = data_dict.get("customer")
+        subscription_id = data_dict.get("subscription")
+
+        metadata = data_dict.get("metadata") or {}
+        product_id = metadata.get("product_id", DEFAULT_PRODUCT_ID)
+
+        print("CUSTOMER EMAIL:", customer_email)
+        print("SUBSCRIPTION ID:", subscription_id)
+        print("PRODUCT ID:", product_id)
+
+        if not customer_email:
+            print("NO CUSTOMER EMAIL FOUND")
+            return "OK"
+
+        ensure_customer(customer_email, stripe_customer_id)
+
+        if subscription_id:
+            subscription = stripe.Subscription.retrieve(subscription_id)
+            subscription_dict = stripe_obj_to_dict(subscription)
+
+            current_period_end = datetime.fromtimestamp(
+                subscription_dict["current_period_end"],
+                tz=timezone.utc,
+            )
+        else:
+            current_period_end = utc_now() + timedelta(days=30)
+
+        license_key = create_or_update_license(
+            email=customer_email,
+            product_id=product_id,
+            expires_at=current_period_end,
+            subscription_id=subscription_id,
+            status="active",
+            platform="BOTH",
+        )
+
+        print("LICENSE CREATED:", license_key)
+
+        sync_license_to_sheets(
+            customer_email,
+            license_key,
+            product_id,
+            "active",
+            "BOTH",
+            iso(current_period_end),
+            subscription_id,
+        )
+
+        send_license_email(
+            customer_email,
+            license_key,
+            product_id,
+            iso(current_period_end),
+        )
+
+    elif event_type in ("customer.subscription.updated", "customer.subscription.created"):
+        subscription_id = data_dict.get("id")
+        status = data_dict.get("status")
+        period_end = data_dict.get("current_period_end")
+
+        print("SUBSCRIPTION UPDATE:", subscription_id, status)
+
+        if subscription_id and status and period_end:
+            current_period_end = datetime.fromtimestamp(period_end, tz=timezone.utc)
+            mapped_status = "active" if status in ("active", "trialing", "past_due") else "cancelled"
+
+            update_license_status_by_subscription(
+                subscription_id,
+                mapped_status,
+                current_period_end,
+            )
+
+    elif event_type == "customer.subscription.deleted":
+        subscription_id = data_dict.get("id")
+
+        print("SUBSCRIPTION DELETED:", subscription_id)
+
+        if subscription_id:
+            update_license_status_by_subscription(subscription_id, "cancelled")
+
+    elif event_type == "invoice.payment_failed":
+        subscription_id = data_dict.get("subscription")
+
+        print("PAYMENT FAILED:", subscription_id)
+
+        if subscription_id:
+            update_license_status_by_subscription(subscription_id, "cancelled")
 
     return "OK"
 
