@@ -11,14 +11,11 @@ from typing import Optional
 
 app = FastAPI()
 
-# =========================
-# CONFIG
-# =========================
-STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "sk_live_replace_me")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "whsec_replace_me")
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "replace_me")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "replace_me")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
 DEFAULT_PRODUCT_ID = os.getenv("DEFAULT_PRODUCT_ID", "BUSY_ALL")
 DB_PATH = os.getenv("DB_PATH", "busytrader.db")
@@ -26,9 +23,6 @@ DB_PATH = os.getenv("DB_PATH", "busytrader.db")
 stripe.api_key = STRIPE_SECRET_KEY
 
 
-# =========================
-# DB
-# =========================
 def db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -101,27 +95,6 @@ def init_db():
 init_db()
 
 
-# =========================
-# HELPERS
-# =========================
-def send_telegram_alert(message: str):
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Telegram skipped: not configured")
-        return
-
-    try:
-        response = requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-            json={
-                "chat_id": TELEGRAM_CHAT_ID,
-                "text": message,
-                "parse_mode": "HTML",
-            },
-            timeout=10,
-        )
-        print("Telegram alert:", response.status_code)
-    except Exception as e:
-        print("Telegram error:", str(e))
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -150,6 +123,30 @@ def stripe_obj_to_dict(obj):
     if hasattr(obj, "to_dict_recursive"):
         return obj.to_dict_recursive()
     return dict(obj)
+
+
+def send_telegram_alert(message: str):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("Telegram skipped: not configured")
+        return
+
+    if TELEGRAM_BOT_TOKEN == "replace_me" or TELEGRAM_CHAT_ID == "replace_me":
+        print("Telegram skipped: placeholder values")
+        return
+
+    try:
+        response = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            json={
+                "chat_id": TELEGRAM_CHAT_ID,
+                "text": message,
+                "parse_mode": "HTML",
+            },
+            timeout=10,
+        )
+        print("Telegram alert response:", response.status_code, response.text)
+    except Exception as e:
+        print("Telegram error:", str(e))
 
 
 def ensure_customer(email: str, stripe_customer_id: Optional[str]) -> None:
@@ -335,68 +332,73 @@ def sync_license_to_sheets(
 
 def send_license_email(email: str, license_key: str, product_id: str, expiry: str):
     resend_api_key = os.getenv("RESEND_API_KEY", "")
-    email_from = os.getenv("EMAIL_FROM", "BusyTrader <onboarding@resend.dev>")
+    email_from = os.getenv("EMAIL_FROM", "BusyTrader <support@busytraderapp.com>")
 
     if not resend_api_key:
         print("Email skipped: RESEND_API_KEY not set")
         return
 
+    ea_download_link = "https://drive.google.com/drive/folders/1r7fY00J7Q2wUKE4TFKdG8n1QWmKncjhw"
+    vip_link = "https://t.me/+FNI5G2IXQrBmODk0"
+    scanner_link = "https://buy.stripe.com/6oU6oz9jAbQzal1cwwds407"
+    setup_video_link = "https://youtu.be/8lp_DvkzM7E"
+
     html = f"""
-<div style="background:#0b0b0b;padding:30px;color:white;font-family:Arial;">
-  <h2 style="color:gold;">BusyTrader Licence Activated</h2>
+    <div style="background:#0b0b0b;padding:30px;color:white;font-family:Arial;">
+      <h2 style="color:gold;">BusyTrader Licence Activated</h2>
 
-  <p>Your access is now active.</p>
+      <p>Your access is now active.</p>
 
-  <p><strong>Product:</strong> {product_id}</p>
+      <p><strong>Product:</strong> {product_id}</p>
 
-  <p><strong>Licence Key:</strong></p>
-  <div style="background:#111;padding:15px;border:1px solid gold;border-radius:8px;font-size:18px;">
-    {license_key}
-  </div>
+      <p><strong>Licence Key:</strong></p>
+      <div style="background:#111;padding:15px;border:1px solid gold;border-radius:8px;font-size:18px;">
+        {license_key}
+      </div>
 
-  <p><strong>Expiry:</strong> {expiry}</p>
+      <p><strong>Expiry:</strong> {expiry}</p>
 
-  <br>
+      <br>
 
-  <a href="https://drive.google.com/drive/folders/1r7fY00J7Q2wUKE4TFKdG8n1QWmKncjhw"
-     style="background:gold;color:#111;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:6px 0;">
-     Download EA
-  </a>
+      <a href="{ea_download_link}"
+         style="background:gold;color:#111;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:6px 0;">
+         Download EA
+      </a>
 
-  <br>
+      <br>
 
-  <a href="https://t.me/+FNI5G2IXQrBmODk0"
-     style="background:#229ED9;color:white;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:6px 0;">
-     Join Telegram VIP
-  </a>
+      <a href="{vip_link}"
+         style="background:#229ED9;color:white;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:6px 0;">
+         Join Telegram VIP
+      </a>
 
-  <br>
+      <br>
 
-  <a href="https://buy.stripe.com/6oU6oz9jAbQzal1cwwds407"
-     style="background:#111;color:gold;padding:12px 18px;border:1px solid gold;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:6px 0;">
-     Upgrade to AI Scanner
-  </a>
+      <a href="{scanner_link}"
+         style="background:#111;color:gold;padding:12px 18px;border:1px solid gold;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:6px 0;">
+         Upgrade to AI Scanner
+      </a>
 
-  <br>
+      <br>
 
-  <a href="https://youtu.be/8lp_DvkzM7E"
-     style="background:#222;color:white;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:6px 0;">
-     Watch Setup Video
-  </a>
+      <a href="{setup_video_link}"
+         style="background:#222;color:white;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:6px 0;">
+         Watch Setup Video
+      </a>
 
-  <br><br>
+      <br><br>
 
-  <a href="https://t.me/busytraderhq" style="color:#229ED9;">
-     Join Telegram for updates
-  </a>
+      <a href="https://t.me/busytraderhq" style="color:#229ED9;">
+         Join Telegram for updates
+      </a>
 
-  <hr style="border-color:#222;">
+      <hr style="border-color:#222;">
 
-  <p style="font-size:12px;color:#888;">
-    Trading involves risk. This is not financial advice.
-  </p>
-</div>
-"""
+      <p style="font-size:12px;color:#888;">
+        Trading involves risk. This is not financial advice.
+      </p>
+    </div>
+    """
 
     try:
         response = requests.post(
@@ -418,29 +420,7 @@ def send_license_email(email: str, license_key: str, product_id: str, expiry: st
     except Exception as e:
         print("Email send failed:", str(e))
 
-    try:
-        response = requests.post(
-            "https://api.resend.com/emails",
-            headers={
-                "Authorization": f"Bearer {resend_api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "from": email_from,
-                "to": [email],
-                "subject": "Your BusyTrader Licence Key",
-                "html": html,
-            },
-            timeout=10,
-        )
-        print("Email send response:", response.status_code, response.text)
-    except Exception as e:
-        print("Email send failed:", str(e))
 
-
-# =========================
-# MODELS
-# =========================
 class Signal(BaseModel):
     symbol: str
     direction: str
@@ -460,9 +440,6 @@ class ValidateRequest(BaseModel):
     product_id: Optional[str] = DEFAULT_PRODUCT_ID
 
 
-# =========================
-# HEALTH
-# =========================
 @app.get("/health", response_class=PlainTextResponse)
 def health():
     return "OK"
@@ -483,9 +460,6 @@ def home():
     }
 
 
-# =========================
-# TELEGRAM SIGNAL WEBHOOK
-# =========================
 @app.post("/send-signal")
 def send_signal(signal: Signal):
     if TELEGRAM_BOT_TOKEN == "replace_me" or TELEGRAM_CHAT_ID == "replace_me":
@@ -542,9 +516,6 @@ Reason:
     }
 
 
-# =========================
-# MANUAL REGISTER / REBIND
-# =========================
 @app.post("/bind-account", response_class=PlainTextResponse)
 async def bind_account(request: Request):
     data = await request.json()
@@ -570,9 +541,6 @@ async def bind_account(request: Request):
     return "OK|BOUND"
 
 
-# =========================
-# EA VALIDATION ENDPOINT
-# =========================
 @app.post("/validate", response_class=PlainTextResponse)
 async def validate(req: ValidateRequest, request: Request):
     ip = request.client.host if request.client else ""
@@ -627,9 +595,6 @@ async def validate(req: ValidateRequest, request: Request):
     return f"OK|{row['expires_at']}|VALID"
 
 
-# =========================
-# STRIPE WEBHOOK
-# =========================
 @app.post("/stripe-webhook", response_class=PlainTextResponse)
 async def stripe_webhook(
     request: Request,
@@ -696,14 +661,26 @@ async def stripe_webhook(
         )
 
         print("LICENSE CREATED:", license_key)
-        send_telegram_alert(f"""
-        💰 <b>NEW PURCHASE</b>
 
-        📦 <b>Product:</b> {product_id}
-        👤 <b>Email:</b> {customer_email}
-        🔑 <b>License:</b> {license_key}
-        ⏳ <b>Expiry:</b> {iso(current_period_end)}
-        """)
+        send_telegram_alert(f"""
+💰 <b>NEW PURCHASE</b>
+
+📦 <b>Product:</b> {product_id}
+👤 <b>Email:</b> {customer_email}
+🔑 <b>License:</b> {license_key}
+⏳ <b>Expiry:</b> {iso(current_period_end)}
+""")
+
+        if product_id == "BUSY_VIP":
+            vip_link = "https://t.me/+FNI5G2IXQrBmODk0"
+
+            send_telegram_alert(f"""
+🔥 <b>NEW VIP MEMBER</b>
+
+👤 <b>Email:</b> {customer_email}
+🔑 <b>License:</b> {license_key}
+📲 <b>VIP invite:</b> {vip_link}
+""")
 
         sync_license_to_sheets(
             customer_email,
@@ -743,11 +720,12 @@ async def stripe_webhook(
         subscription_id = data_dict.get("id")
 
         print("SUBSCRIPTION DELETED:", subscription_id)
-        send_telegram_alert(f"""
-        ❌ <b>SUBSCRIPTION CANCELLED</b>
 
-        🧾 <b>Subscription:</b> {subscription_id}
-        """)
+        send_telegram_alert(f"""
+❌ <b>SUBSCRIPTION CANCELLED</b>
+
+🧾 <b>Subscription:</b> {subscription_id}
+""")
 
         if subscription_id:
             update_license_status_by_subscription(subscription_id, "cancelled")
@@ -756,11 +734,12 @@ async def stripe_webhook(
         subscription_id = data_dict.get("subscription")
 
         print("PAYMENT FAILED:", subscription_id)
-        send_telegram_alert(f"""
-        ⚠️ <b>PAYMENT FAILED</b>
 
-        🧾 <b>Subscription:</b> {subscription_id}
-        """)
+        send_telegram_alert(f"""
+⚠️ <b>PAYMENT FAILED</b>
+
+🧾 <b>Subscription:</b> {subscription_id}
+""")
 
         if subscription_id:
             update_license_status_by_subscription(subscription_id, "cancelled")
@@ -768,9 +747,6 @@ async def stripe_webhook(
     return "OK"
 
 
-# =========================
-# ADMIN - KILL SWITCH
-# =========================
 @app.post("/admin/update-license", response_class=PlainTextResponse)
 async def admin_update_license(request: Request):
     data = await request.json()
