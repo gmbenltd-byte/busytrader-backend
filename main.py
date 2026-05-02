@@ -104,6 +104,24 @@ init_db()
 # =========================
 # HELPERS
 # =========================
+def send_telegram_alert(message: str):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("Telegram skipped: not configured")
+        return
+
+    try:
+        response = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            json={
+                "chat_id": TELEGRAM_CHAT_ID,
+                "text": message,
+                "parse_mode": "HTML",
+            },
+            timeout=10,
+        )
+        print("Telegram alert:", response.status_code)
+    except Exception as e:
+        print("Telegram error:", str(e))
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -657,6 +675,14 @@ async def stripe_webhook(
         )
 
         print("LICENSE CREATED:", license_key)
+        send_telegram_alert(f"""
+        💰 <b>NEW PURCHASE</b>
+
+        📦 <b>Product:</b> {product_id}
+        👤 <b>Email:</b> {customer_email}
+        🔑 <b>License:</b> {license_key}
+        ⏳ <b>Expiry:</b> {iso(current_period_end)}
+        """)
 
         sync_license_to_sheets(
             customer_email,
@@ -696,6 +722,11 @@ async def stripe_webhook(
         subscription_id = data_dict.get("id")
 
         print("SUBSCRIPTION DELETED:", subscription_id)
+        send_telegram_alert(f"""
+        ❌ <b>SUBSCRIPTION CANCELLED</b>
+
+        🧾 <b>Subscription:</b> {subscription_id}
+        """)
 
         if subscription_id:
             update_license_status_by_subscription(subscription_id, "cancelled")
@@ -704,6 +735,11 @@ async def stripe_webhook(
         subscription_id = data_dict.get("subscription")
 
         print("PAYMENT FAILED:", subscription_id)
+        send_telegram_alert(f"""
+        ⚠️ <b>PAYMENT FAILED</b>
+
+        🧾 <b>Subscription:</b> {subscription_id}
+        """)
 
         if subscription_id:
             update_license_status_by_subscription(subscription_id, "cancelled")
