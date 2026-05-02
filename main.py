@@ -344,7 +344,7 @@ def send_license_email(email: str, license_key: str, product_id: str, expiry: st
         "BUSY_SCALPING_PDF": "PASTE_SCALPING_PDF_LINK_HERE",
 
         # EAs / Apps
-        "BUSY_NAS100_EA": "PASTE_NAS100_EA_ZIP_LINK_HERE",
+        "BUSY_NAS100_EA": "https://drive.google.com/drive/folders/1r7fY00J7Q2wUKE4TFKdG8n1QWmKncjhw?usp=drive_link",
         "BUSY_AI_AUTOTRADER": "PASTE_AUTOTRADER_ZIP_LINK_HERE",
         "BUSY_AI_SCANNER": "PASTE_SCANNER_LINK_HERE",
         "BUSY_AI_COPILOT": "PASTE_COPILOT_LINK_HERE",
