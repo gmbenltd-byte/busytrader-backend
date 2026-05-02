@@ -342,40 +342,61 @@ def send_license_email(email: str, license_key: str, product_id: str, expiry: st
         return
 
     html = f"""
-    <div style="background:#0b0b0b;padding:30px;color:white;font-family:Arial;">
-      <h2 style="color:gold;">BusyTrader Licence Activated</h2>
+<div style="background:#0b0b0b;padding:30px;color:white;font-family:Arial;">
+  <h2 style="color:gold;">BusyTrader Licence Activated</h2>
 
-      <p>Your access is now active.</p>
+  <p>Your access is now active.</p>
 
-      <p><strong>Product:</strong> {product_id}</p>
+  <p><strong>Product:</strong> {product_id}</p>
 
-      <p><strong>Licence Key:</strong></p>
-      <div style="background:#111;padding:15px;border:1px solid gold;border-radius:8px;font-size:18px;">
-        {license_key}
-      </div>
+  <p><strong>Licence Key:</strong></p>
+  <div style="background:#111;padding:15px;border:1px solid gold;border-radius:8px;font-size:18px;">
+    {license_key}
+  </div>
 
-      <p><strong>Expiry:</strong> {expiry}</p>
+  <p><strong>Expiry:</strong> {expiry}</p>
 
-      <br>
+  <br>
 
-      <a href="https://drive.google.com/drive/folders/1r7fY00J7Q2wUKE4TFKdG8n1QWmKncjhw?usp=drive_link"
-         style="background:gold;color:#111;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:bold;">
-         Download BusyTrader EA
-      </a>
+  <a href="https://drive.google.com/drive/folders/1r7fY00J7Q2wUKE4TFKdG8n1QWmKncjhw"
+     style="background:gold;color:#111;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:6px 0;">
+     Download EA
+  </a>
 
-      <br><br>
+  <br>
 
-      <a href="https://t.me/busytraderhq" style="color:#229ED9;">
-         Join Telegram for updates
-      </a>
+  <a href="https://t.me/+FNI5G2IXQrBmODk0"
+     style="background:#229ED9;color:white;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:6px 0;">
+     Join Telegram VIP
+  </a>
 
-      <hr style="border-color:#222;">
+  <br>
 
-      <p style="font-size:12px;color:#888;">
-        Trading involves risk. This is not financial advice.
-      </p>
-    </div>
-    """
+  <a href="https://buy.stripe.com/6oU6oz9jAbQzal1cwwds407"
+     style="background:#111;color:gold;padding:12px 18px;border:1px solid gold;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:6px 0;">
+     Upgrade to AI Scanner
+  </a>
+
+  <br>
+
+  <a href="https://youtu.be/8lp_DvkzM7E"
+     style="background:#222;color:white;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:6px 0;">
+     Watch Setup Video
+  </a>
+
+  <br><br>
+
+  <a href="https://t.me/busytraderhq" style="color:#229ED9;">
+     Join Telegram for updates
+  </a>
+
+  <hr style="border-color:#222;">
+
+  <p style="font-size:12px;color:#888;">
+    Trading involves risk. This is not financial advice.
+  </p>
+</div>
+"""
 
     try:
         response = requests.post(
